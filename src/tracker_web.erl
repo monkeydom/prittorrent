@@ -16,14 +16,30 @@ start(Options) ->
 stop() ->
     mochiweb_http:stop(?MODULE).
 
+handle_announcement(Req) ->
+    ParsedQuery = Req:parse_qs(),
+    io:format("query: ~p\n",[ParsedQuery]),
+    case lists:keyfind("compact",1,ParsedQuery) of 
+    	{"compact","1"} ->
+    		Req:ok({"text/plain",[],[benc:to_binary([{<<"peers">>, <<192,168,178,47,6881:16/big>> }])]});
+    	_ -> 
+    		Req:ok({"text/plain",benc:to_binary([{
+    			<<"peers">>, [ [% {<<"peer id">>,<<"idon'tcareatall">>},
+    			                {<<"ip">>,<<"127.0.0.1">>},
+    			                {<<"port">>,6881}] ] }])})
+    end.
+
+
 loop(Req) ->
     "/" ++ Path = Req:get(path),
     try
         case Req:get(method) of
             Method when Method =:= 'GET'; Method =:= 'HEAD' ->
                 case Path of
+                    "announce" ++ _ ->
+                        handle_announcement(Req);
                     _ ->
-                      	Req:ok({"text/plain", "Hello, world!"})
+                      	Req:ok({"text/plain", ["Hello, world!\n", io_lib:format("~p - ~p - ~p",[Req:get(peer),Req:parse_qs(),Path])]})
                 end;
             'POST' ->
                 case Path of
