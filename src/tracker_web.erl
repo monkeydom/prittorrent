@@ -60,6 +60,8 @@ loop(Req) ->
 %			io:format("Response: ~s~n", [Response]),
 
 	    	Req:ok({"text/plain", Response});
+	    { 'GET', "/stats" } ->
+			Req:ok({"application/json",[],mochijson2:encode(trackerdb:json_statistics())}); 
 	    _ ->
 	        Req:respond({501, [{"Content-Type", "text/plain"}], "Malformed request."})
 	end.
