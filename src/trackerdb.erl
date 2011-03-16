@@ -10,7 +10,7 @@
 
 -record(swarm_status, { info_hash, complete=0, incomplete=0}).
 
--record(struct, { entries = [] }). 
+% -record(struct, { entries = [] }). 
 
 init() ->
     mnesia:create_table(pirate,
@@ -50,7 +50,7 @@ statistics() ->
 json_statistics() ->
 	{struct, lists:map(fun(#swarm_status{info_hash = InfoHash, complete = Complete, incomplete = Incomplete}) ->
 			HashBinary = prit_util:to_hex(InfoHash),
-			{HashBinary, {struct,[{complete,Complete},{incomplete,Incomplete}]}}
+			{HashBinary, {struct,[{complete,Complete},{incomplete,Incomplete},{name,torrentdb:torrent_name(InfoHash)}]}}
 		end, statistics())}.
 
 

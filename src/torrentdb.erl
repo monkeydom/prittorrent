@@ -1,6 +1,6 @@
 -module(torrentdb).
 
--export([init/0, apply_seedlist/1, add_torrent/2, rm_torrent/1, inc_uploaded/2, get_torrent_file/1, peer_id/0, tracker_loop/3]).
+-export([init/0, apply_seedlist/1, add_torrent/2, rm_torrent/1, inc_uploaded/2, get_torrent_file/1, peer_id/0, tracker_loop/3, torrent_name/1]).
 
 -record(torrent, {info_hash,
 		  torrent_file,
@@ -17,6 +17,12 @@ init() ->
 	undefined ->
 	    application:set_env(servtorrent, peer_id, generate_peer_id())
     end.
+
+torrent_name(InfoHash) ->
+	case mnesia:dirty_read({torrent, InfoHash}) of
+		#torrent{torrent_file=TorrentFile} -> filename:basename(TorrentFile);
+		_ -> no_exists
+	end.
 
 apply_seedlist(NewSeedList) ->
     {atomic, {ToAdd, Removed}} =
