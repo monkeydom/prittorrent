@@ -68,8 +68,8 @@ remove_peers_with_timeout_in_seconds(Seconds) ->
 	Q = qlc:q([Pirate || Pirate <- mnesia:table(pirate), Pirate#pirate.last_seen < KillTime]),
 	F = fun () ->
 		PiratesToKill = qlc:e(Q),
-		lists:foreach( fun(Pirate) -> mnesia:delete_object(Pirate) end, PiratesToKill),
-		io:format("Killing Pirates: ~p \n",[PiratesToKill]) % should not do this in a transaction…
+		lists:foreach( fun(Pirate) -> mnesia:delete_object(Pirate) end, PiratesToKill) 
+%		io:format("Killing Pirates: ~p \n",[PiratesToKill]) % should not do this in a transaction…
 	end,
 	graceful_transaction(F).
 
