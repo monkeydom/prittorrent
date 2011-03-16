@@ -20,8 +20,8 @@ init() ->
 
 torrent_name(InfoHash) ->
 	case mnesia:dirty_read({torrent, InfoHash}) of
-		#torrent{torrent_file=TorrentFile} -> filename:basename(TorrentFile);
-		_ -> no_exists
+		[#torrent{torrent_file=TorrentFile}] -> filename:basename(TorrentFile);
+		[] -> no_exists
 	end.
 
 apply_seedlist(NewSeedList) ->
