@@ -8,12 +8,17 @@
 
 start_link() ->
     {ok, Filename} = application:get_env(servtorrent, seedlist),
-    Pid = spawn_link(
-	    fun() ->
-		    loop(Filename, [])
-	    end),
-    register(seedlist, Pid),
-    {ok, Pid}.
+    case filelib:is_regular(Filename) of
+        true ->
+            Pid = spawn_link(
+	            fun() ->
+		            loop(Filename, [])
+	            end),
+            register(seedlist, Pid),
+            {ok, Pid};
+        false ->
+            {error, "Seedlist file not found"}
+    end.
 
 -define(RELOAD_INTERVAL, 10).
 loop(Filename, ModTimes) ->
