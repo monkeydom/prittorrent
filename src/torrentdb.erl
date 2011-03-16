@@ -20,7 +20,7 @@ init() ->
 
 torrent_name(InfoHash) ->
 	case mnesia:dirty_read({torrent, InfoHash}) of
-		[#torrent{torrent_file=TorrentFile}] -> filename:basename(TorrentFile);
+		[#torrent{torrent_file=TorrentFile}] -> iolist_to_binary(filename:basename(TorrentFile));
 		[] -> no_exists
 	end.
 
