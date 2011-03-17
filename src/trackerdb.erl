@@ -1,6 +1,6 @@
 -module(trackerdb).
 
--export([init/0, announce/7, remove/3, unix_seconds_since_epoch/0, remove_peers_with_timeout_in_seconds/1]).
+-export([init/0, announce/7, remove/3, unix_seconds_since_epoch/0, remove_peers_with_timeout_in_seconds/1, json_statistics/0]).
 
 -include_lib("stdlib/include/qlc.hrl").
 
@@ -8,11 +8,51 @@
 					uploaded, downloaded, left,
 					first_seen, last_seen}).
 
--record(swarm_status, { info_hash, complete, incomplete}). 
+-record(swarm_status, { info_hash, complete=0, incomplete=0}).
+
+% -record(struct, { entries = [] }). 
 
 init() ->
     mnesia:create_table(pirate,
 			[{attributes, record_info(fields, pirate)}, {type, set}, {index, [info_hash]}]).
+
+updated_statistics(#pirate{info_hash = InfoHash, left = Left}, [], Result) ->
+	NewStatus = case Left of 
+		0 -> #swarm_status{info_hash=InfoHash,   complete=1};
+		_ -> #swarm_status{info_hash=InfoHash, incomplete=1}
+	end,
+	[NewStatus | Result];
+updated_statistics(#pirate{info_hash = InfoHash, left = Left}, [#swarm_status{info_hash = InfoHash} = Status | Tail], Result) ->
+	UpdatedStatus = case Left of
+		0 -> Status#swarm_status{info_hash=InfoHash,   complete = Status#swarm_status.complete + 1};
+		_ -> Status#swarm_status{info_hash=InfoHash, incomplete = Status#swarm_status.incomplete + 1}
+	end,
+	[UpdatedStatus | (Tail ++ Result)];
+updated_statistics(Pirate, [Status | Tail], Result) ->
+	updated_statistics(Pirate, Tail, [Status | Result]).
+	
+	
+
+updated_statistics(Pirate, List) ->
+	updated_statistics(Pirate, List, []).
+	
+
+statistics() ->
+	F = fun() ->
+		mnesia:foldl( fun(Pirate, Acc) ->
+				updated_statistics(Pirate, Acc)
+			end,
+			[],
+			pirate)		
+	end,
+	graceful_transaction(F).
+
+json_statistics() ->
+	{struct, lists:map(fun(#swarm_status{info_hash = InfoHash, complete = Complete, incomplete = Incomplete}) ->
+			HashBinary = prit_util:to_hex(InfoHash),
+			{HashBinary, {struct,[{complete,Complete},{incomplete,Incomplete},{name,torrentdb:torrent_name(InfoHash)}]}}
+		end, statistics())}.
+
 
 % using astro's _t to mean needs to be inside of an transaction
 swarm_status_t(InfoHash) ->
@@ -68,8 +108,8 @@ remove_peers_with_timeout_in_seconds(Seconds) ->
 	Q = qlc:q([Pirate || Pirate <- mnesia:table(pirate), Pirate#pirate.last_seen < KillTime]),
 	F = fun () ->
 		PiratesToKill = qlc:e(Q),
-		lists:foreach( fun(Pirate) -> mnesia:delete_object(Pirate) end, PiratesToKill),
-		io:format("Killing Pirates: ~p \n",[PiratesToKill]) % should not do this in a transaction…
+		lists:foreach( fun(Pirate) -> mnesia:delete_object(Pirate) end, PiratesToKill) 
+%		io:format("Killing Pirates: ~p \n",[PiratesToKill]) % should not do this in a transaction…
 	end,
 	graceful_transaction(F).
 

@@ -212,7 +212,7 @@ process_input(#state{mode = server,
 						  peer_supports_lte = extensions_supports_lte(ExtensionBytes)}	,	
 			send_full_handshake(NewState),
 			send_bitfield(NewState),
-			logger:log(wire, debug,"Completed server-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
+%			logger:log(wire, debug,"Completed server-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
 			process_input(NewState)
 	end;
 
@@ -245,7 +245,7 @@ process_input(#state{mode = client,
 			{ok, {IP, Port}} = inet:peername(Sock),
 			peerdb:register_peer(InfoHash,PeerId,IP,Port),
 			NewState = State#state{step = run, buffer = Rest, peer_supports_lte = extensions_supports_lte(ExtensionBytes) },	
-			logger:log(wire, debug,"Completed client-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
+%			logger:log(wire, debug,"Completed client-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
 			process_input(NewState)
 	end;
 

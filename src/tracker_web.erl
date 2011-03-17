@@ -20,46 +20,53 @@ loop(Req) ->
 	case {Req:get(method), Req:get(path)} of
 	    { 'GET', "/announce" } ->
 			Query = Req:parse_qs(),
-			HandledArguments = ["info_hash", "peer_id","port","uploaded","downloaded","left","event","compact","supportcrypto","key"],
-			{ok, Ip} = inet_parse:address(Req:get(peer)),
+			_HandledArguments = ["info_hash", "peer_id","port","uploaded","downloaded","left","event","compact","supportcrypto","key"],
 			InfoHash = list_to_binary(proplists:get_value("info_hash", Query)),
-			PeerId = list_to_binary(proplists:get_value("peer_id", Query)),
-			Port = list_to_integer(proplists:get_value("port", Query)),
-			Uploaded = list_to_integer(proplists:get_value("uploaded", Query, "0")),
-			Downloaded = list_to_integer(proplists:get_value("downloaded", Query, "0")),
-			Left = list_to_integer(proplists:get_value("left", Query, "0")),
-			Event = proplists:get_value("event", Query, undefined),
-			Compact = list_to_integer(proplists:get_value("compact", Query, "0")),
-			Crypto = list_to_integer(proplists:get_value("supportcrypto", Query, "0")),
-			ClientKey = list_to_binary(proplists:get_value("key", Query, "")),
-
-
-			io:format("~s:~b hash:~s peerId:~s left:~b compact:~b up:~b down:~b key:~s crypto:~b ",[inet_parse:ntoa(Ip),Port,prit_util:info_hash_representation(InfoHash), prit_util:to_printable_binary(PeerId), Left, Compact, Uploaded, Downloaded, ClientKey, Crypto]),
-			io:format("additional arguments:~p~n", [lists:filter(fun({Key,_Value}) -> not(lists:member(Key,HandledArguments)) end, Query)]), 
-
-
-			Response = case Event of 
-				"stopped" ->
-					ok = trackerdb:remove(InfoHash, Ip, Port),
-					benc:to_binary(<<"stopped">>);
-				_ -> 
-					{ ok, AvailablePeers, Complete, Incomplete } = trackerdb:announce(InfoHash, Ip, Port, PeerId, Uploaded, Downloaded, Left),
-			
-					{ok, Interval} = tracker_manager:get(interval),
-					PeersContent = case Compact of
-						1 -> << <<A,B,C,D,P:16/big>> || { _, {A,B,C,D}, P } <- AvailablePeers >>;
-						0 -> [ [{<<"ip">>,list_to_binary(io_lib:format("~B.~B.~B.~B",[A,B,C,D]))},
-								{<<"peer id">>,TmpId},
-								{<<"port">>,TmpPort}] || {TmpId, {A,B,C,D}, TmpPort} <- AvailablePeers ]
+			case torrentdb:torrent_name(InfoHash) of
+				no_exists -> % only allow tracking of torrents we serve
+					Req:respond({501, [{"Content-Type", "text/plain"}], "Malformed request."});
+				_ ->
+					{ok, Ip} = inet_parse:address(Req:get(peer)),
+					PeerId = list_to_binary(proplists:get_value("peer_id", Query)),
+					Port = list_to_integer(proplists:get_value("port", Query)),
+					Uploaded = list_to_integer(proplists:get_value("uploaded", Query, "0")),
+					Downloaded = list_to_integer(proplists:get_value("downloaded", Query, "0")),
+					Left = list_to_integer(proplists:get_value("left", Query, "0")),
+					Event = proplists:get_value("event", Query, undefined),
+					Compact = list_to_integer(proplists:get_value("compact", Query, "0")),
+					_Crypto = list_to_integer(proplists:get_value("supportcrypto", Query, "0")),
+					_ClientKey = list_to_binary(proplists:get_value("key", Query, "")),
+		
+		
+		%			io:format("~s:~b hash:~s peerId:~s left:~b compact:~b up:~b down:~b key:~s crypto:~b ",[inet_parse:ntoa(Ip),Port,prit_util:info_hash_representation(InfoHash), prit_util:to_printable_binary(PeerId), Left, Compact, Uploaded, Downloaded, ClientKey, Crypto]),
+		%			io:format("additional arguments:~p~n", [lists:filter(fun({Key,_Value}) -> not(lists:member(Key,HandledArguments)) end, Query)]), 
+		
+		
+					Response = case Event of 
+						"stopped" ->
+							ok = trackerdb:remove(InfoHash, Ip, Port),
+							benc:to_binary(<<"stopped">>);
+						_ -> 
+							{ ok, AvailablePeers, Complete, Incomplete } = trackerdb:announce(InfoHash, Ip, Port, PeerId, Uploaded, Downloaded, Left),
+					
+							{ok, Interval} = tracker_manager:get(interval),
+							PeersContent = case Compact of
+								1 -> << <<A,B,C,D,P:16/big>> || { _, {A,B,C,D}, P } <- AvailablePeers >>;
+								0 -> [ [{<<"ip">>,list_to_binary(io_lib:format("~B.~B.~B.~B",[A,B,C,D]))},
+										{<<"peer id">>,TmpId},
+										{<<"port">>,TmpPort}] || {TmpId, {A,B,C,D}, TmpPort} <- AvailablePeers ]
+							end,
+							benc:to_binary([{<<"complete">>,Complete},
+											{<<"incomplete">>,Incomplete},
+											{<<"interval">>,Interval},
+											{<<"peers">>, PeersContent}])
 					end,
-					benc:to_binary([{<<"complete">>,Complete},
-									{<<"incomplete">>,Incomplete},
-									{<<"interval">>,Interval},
-									{<<"peers">>, PeersContent}])
-			end,
-			io:format("Response: ~s~n", [Response]),
-
-	    	Req:ok({"text/plain", Response});
+		%			io:format("Response: ~s~n", [Response]),
+		
+					Req:ok({"text/plain", Response})
+			end;
+	    { 'GET', "/stats" } ->
+			Req:ok({"application/json",[],mochijson2:encode(trackerdb:json_statistics())}); 
 	    _ ->
 	        Req:respond({501, [{"Content-Type", "text/plain"}], "Malformed request."})
 	end.
