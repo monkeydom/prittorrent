@@ -14,7 +14,9 @@
 -record(state, {sock, buffer = <<>>,
 		mode, step = handshake, info_hash,
 		choked = true, interested = false,
-		queue = []}).
+		queue = [], lte_ids = [], peer_supports_lte = false}). 
+
+%% LTE = Libtorrent extension protocol http://www.rasterbar.com/products/libtorrent/extension_protocol.html
 -record(queued, {piece, offset, length}).
 
 -define(CHOKE, 0).
@@ -26,6 +28,7 @@
 -define(REQUEST, 6).
 -define(PIECE, 7).
 -define(CANCEL, 8).
+-define(BITTORRENT_PROTOCOL, 19, "BitTorrent protocol").
 
 %%%===================================================================
 %%% API
@@ -192,7 +195,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Waiting for handshake
 process_input(#state{mode = server,
 		     step = handshake,
-		     buffer = <<19, "BitTorrent protocol", _ExtensionBytes:8/binary , InfoHash:20/binary, PeerId:20/binary, Rest/binary>>,
+		     buffer = << ?BITTORRENT_PROTOCOL, ExtensionBytes:8/binary , InfoHash:20/binary, PeerId:20/binary, Rest/binary>>,
 		     sock = Sock} = State) ->
 	% TODO: check if we serve that infohash, and only if we do send out the handshake - otherwise terminate
     {ok, MyPeerId} = torrentdb:peer_id(),
@@ -205,7 +208,8 @@ process_input(#state{mode = server,
 			peerdb:register_peer(InfoHash,PeerId,IP,Port),
 			NewState = State#state{step = run,
 						  buffer = Rest,
-						  info_hash = InfoHash}	,	
+						  info_hash = InfoHash,
+						  peer_supports_lte = extensions_supports_lte(ExtensionBytes)}	,	
 			send_full_handshake(NewState),
 			send_bitfield(NewState),
 			logger:log(wire, debug,"Completed server-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
@@ -230,7 +234,7 @@ process_input(#state{mode = server, step = handshake} = State) ->
 process_input(#state{mode = client,
 		     step = handshake,
 		     info_hash = InfoHash,
-		     buffer = <<19, "BitTorrent protocol", _ExtensionBytes:8/binary , InfoHash:20/binary, PeerId:20/binary, Rest/binary>>,
+		     buffer = << ?BITTORRENT_PROTOCOL, ExtensionBytes:8/binary , InfoHash:20/binary, PeerId:20/binary, Rest/binary>>,
 		     sock = Sock} = State) ->
     {ok, MyPeerId} = torrentdb:peer_id(),
     if 
@@ -240,7 +244,7 @@ process_input(#state{mode = client,
 		    %register with peerdb 
 			{ok, {IP, Port}} = inet:peername(Sock),
 			peerdb:register_peer(InfoHash,PeerId,IP,Port),
-			NewState = State#state{step = run, buffer = Rest},	
+			NewState = State#state{step = run, buffer = Rest, peer_supports_lte = extensions_supports_lte(ExtensionBytes) },	
 			logger:log(wire, debug,"Completed client-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
 			process_input(NewState)
 	end;
@@ -312,11 +316,19 @@ send_message(Sock, Msg) ->
 		      <<Len:32/big,
 			Msg/binary>>).
 
+% extensions_field is 8x8 bytes = 64bit
+extensions_field() ->
+		<<0:43,1:1,0:20>>. % LTE support
+%		<<0:64>>. % noextensions
+
+extensions_supports_lte(<<0:43,LTE_Bit:1,0:20>>) -> 
+	case LTE_Bit of 1 -> true; _ -> false end.
+
 % see http://wiki.theory.org/BitTorrentSpecification
 % handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
 send_full_handshake(#state{sock = Sock, info_hash = InfoHash}) ->
     {ok, MyPeerId} = torrentdb:peer_id(),
-	Handshake = <<19, "BitTorrent protocol", 0,0,0,0,0,0,0,0, InfoHash/binary, MyPeerId/binary>>,
+	Handshake = << ?BITTORRENT_PROTOCOL, (extensions_field())/binary, InfoHash/binary, MyPeerId/binary>>,
 	gen_tcp:send(Sock, Handshake).
 
 
