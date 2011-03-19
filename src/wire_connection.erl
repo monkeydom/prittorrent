@@ -28,6 +28,7 @@
 -define(REQUEST, 6).
 -define(PIECE, 7).
 -define(CANCEL, 8).
+-define(EXTENDED, 20).
 -define(BITTORRENT_PROTOCOL, 19, "BitTorrent protocol").
 
 %%%===================================================================
@@ -73,7 +74,6 @@ init([{InfoHash, IP, Port}]) ->
 					    | Opts]),
     State = #state{sock = Sock, info_hash = InfoHash, mode = client},
 	send_full_handshake(State),
-    send_bitfield(State),
     {ok, State};
 
 %% Incoming connections, InfoHash to be received
@@ -211,6 +211,7 @@ process_input(#state{mode = server,
 						  info_hash = InfoHash,
 						  peer_supports_lte = extensions_supports_lte(ExtensionBytes)}	,	
 			send_full_handshake(NewState),
+			send_lte_handshake(NewState),
 			send_bitfield(NewState),
 %			logger:log(wire, debug,"Completed server-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
 			process_input(NewState)
@@ -245,6 +246,8 @@ process_input(#state{mode = client,
 			{ok, {IP, Port}} = inet:peername(Sock),
 			peerdb:register_peer(InfoHash,PeerId,IP,Port),
 			NewState = State#state{step = run, buffer = Rest, peer_supports_lte = extensions_supports_lte(ExtensionBytes) },	
+			send_lte_handshake(NewState),
+			send_bitfield(NewState),
 %			logger:log(wire, debug,"Completed client-side handshake on socket ~p with ~s:~b~n", [Sock,inet_parse:ntoa(IP),Port]),
 			process_input(NewState)
 	end;
@@ -307,6 +310,13 @@ process_message(<<?CANCEL, Piece:32/big,
 						 Length == Queued#queued.length
 				     end, Queue)};
 
+% LTE
+process_message(<<?EXTENDED,0, BencDict/binary>>, State) ->
+	Dict = benc:parse(BencDict),
+	logger:log(wire, debug,"Got LibTorrent Extension Handshake (LTE) ~p~n", [Dict]),
+	State;	
+	 
+
 process_message(_Msg, State) ->
     State.
 
@@ -321,7 +331,7 @@ extensions_field() ->
 		<<0:43,1:1,0:20>>. % LTE support
 %		<<0:64>>. % noextensions
 
-extensions_supports_lte(<<0:43,LTE_Bit:1,0:20>>) -> 
+extensions_supports_lte(<<_:43,LTE_Bit:1,_:20>>) -> 
 	case LTE_Bit of 1 -> true; _ -> false end.
 
 % see http://wiki.theory.org/BitTorrentSpecification
@@ -331,6 +341,15 @@ send_full_handshake(#state{sock = Sock, info_hash = InfoHash}) ->
 	Handshake = << ?BITTORRENT_PROTOCOL, (extensions_field())/binary, InfoHash/binary, MyPeerId/binary>>,
 	gen_tcp:send(Sock, Handshake).
 
+% see http://www.rasterbar.com/products/libtorrent/extension_protocol.html
+send_lte_handshake(#state{sock = Sock, peer_supports_lte = true}) ->
+	{ok, Port} = wire_listener:get_port(),
+	Handshake = benc:to_binary([{<<"m">>,[{<<"PRIT_PROT_HAHA">>,1}]},
+								{<<"p">>,Port},
+								{<<"v">>,<<"PritTorrent (PodHoster) 0.01">>}]),
+	logger:log(wire, debug,"Sending LTE Handshake (LTE) ~p~n", [benc:parse(Handshake)]),
+	gen_tcp:send(Sock, << (size(Handshake)+2):32/big, ?EXTENDED, 0, Handshake/binary>>);
+send_lte_handshake(#state{peer_supports_lte = false}) -> no_peer_support.
 
 send_bitfield(#state{sock = Sock,
 		     info_hash = InfoHash}) ->
