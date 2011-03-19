@@ -266,7 +266,7 @@ tracker_loop(AnnounceUrl, InfoHash, Counter) ->
 			_ -> empty
 		    end,
 	    {ok, Interval1} = tracker_request(AnnounceUrl, InfoHash, Event),
-	    Interval1
+	    Interval1 - random:uniform(30)
 	catch
 	    exit:Reason ->
 		logger:log(control, error,

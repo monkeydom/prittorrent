@@ -11,6 +11,7 @@ init() ->
 			 {type, bag}]).
 
 %% From tracker response
+%% or from pex message
 add_peers(InfoHash, Peers) ->
     {atomic, NewPeers} =
 	mnesia:transaction(
